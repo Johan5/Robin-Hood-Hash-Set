@@ -52,17 +52,10 @@ namespace Tests
 
             for (int32_t i = 0; i < 5'000; ++i)
             {
-                bool ShouldAdd = static_cast<float>(Rng()) / Rng.max();
                 int32_t R = Dist(Rng);
-                if (ShouldAdd)
-                {
-                    RHHashSet.Set(R);
-                    StlSet.insert(R);
-                }
-                else
-                {
-                    // Remove
-                }
+                RHHashSet.Set(R);
+                StlSet.insert(R);
+                
                 Assert::AreEqual(RHHashSet.GetSize(), static_cast<int32_t>( StlSet.size() ));
                 if (i % 1000 == 0)
                 {
