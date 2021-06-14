@@ -37,9 +37,11 @@ namespace NRobinHoodSet {
 
     // T is the type stored in this set
     template <typename T>
-    class TableEntryImpl {
+    class TableEntryImpl
+    {
         // Stored as union to automatically handle storage/alignment
-        union DataWrapper {
+        union DataWrapper
+        {
             DataWrapper() {}
             ~DataWrapper() {}
             T _Value;
@@ -64,6 +66,7 @@ namespace NRobinHoodSet {
         uint8_t GetIdxOffset() const { return _IdxOffset; }
 
         void MakeIntoEndSentinel() { _IdxOffset = FINAL_IDX; }
+        void SetIdxOffsetToEmpty() { _IdxOffset = EMPTY_ID; }
     private:
 
         DataWrapper _Data;
@@ -88,6 +91,10 @@ namespace NRobinHoodSet {
         // The KeyT type is tee same type as T, +/- a ref (required for perfect forwarding)
         template<typename KeyT>
         T& Set( KeyT&& Key );
+
+        // Returns true if an item was removed
+        // After removing, will attemp to shift up subsequent entries (this keeps entries packed so that Find() doesn't have to search the full _MaxProbeDist every time)
+        bool Remove(const T& Key);
 
         const T* Find(const T& Key) const;
         bool Contains(const T& Key) const;
@@ -166,7 +173,6 @@ namespace NRobinHoodSet {
         _Data = std::move(Other._Data);
         _IdxOffset = IdxOffset;
     }
-
 
     ////////////////////////////////////////////////////////////////////////////////
 
@@ -250,6 +256,39 @@ namespace NRobinHoodSet {
             }
         }
         return Entry->Data();
+    }
+
+    template<typename T>
+    bool RobinHoodSet<T>::Remove(const T& Key)
+    {
+        uint32_t DesiredIdx = CalcDesiredIdx(Key);
+        TableEntry* pEntry = _pTable + DesiredIdx;
+        int8_t Offset = 0;
+
+        while (!pEntry->IsEmpty() && Offset <= pEntry->GetIdxOffset() && Offset < _MaxProbeDist)
+        {
+            if (pEntry->Data() == Key)
+            {
+                // remove
+                pEntry->Data().~T();
+                _NumElements--;
+                // shift following entries up one step (as long as they are offset > 0).
+                // Without this, on subsequent Find()'s we would have to search the full _MaxProbeDist every time.
+                TableEntry* pNextEntry = pEntry + 1;
+                while (!pNextEntry->IsEmpty() && pNextEntry->GetIdxOffset() > 0 && !pNextEntry->IsEndSentinel())
+                {
+                    pEntry->CreateData(std::move(*pNextEntry ), pNextEntry->GetIdxOffset() - 1);
+                    pEntry++;
+                    pNextEntry++;
+                }
+                pEntry->SetIdxOffsetToEmpty();
+
+                return true;
+            }
+            pEntry++;
+            Offset++;
+        }
+        return false;
     }
 
     template<typename T>
