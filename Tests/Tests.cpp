@@ -40,7 +40,6 @@ namespace Tests
 	TEST_CLASS(RobinHoodSetTest)
 	{
 	public:
-		
 		TEST_METHOD(AddRandom)
 		{
             uint32_t Seed = 0;
@@ -64,6 +63,40 @@ namespace Tests
             }
             Assert::IsTrue(HasEqualEntries(StlSet, RHHashSet));
 		}
+
+        TEST_METHOD(Remove)
+        {
+            uint32_t Seed = 0;
+            RobinHoodSet<int32_t> RHHashSet;
+            std::unordered_set<int32_t> StlSet;
+
+            std::mt19937 Rng{ Seed };
+            std::uniform_int_distribution<int32_t> Dist(0, 250);
+
+            for (int32_t i = 0; i < 5'000; ++i)
+            {
+                bool ShouldAdd = static_cast<float>(Rng()) / Rng.max();
+                int32_t R = Dist(Rng);
+                if (ShouldAdd)
+                {
+                    RHHashSet.Set(R);
+                    StlSet.insert(R);
+                }
+                else
+                {
+                    int32_t NumRemovedElements = StlSet.erase(R);
+                    bool StlRemoved = (NumRemovedElements > 0);
+                    bool RhRemoved = RHHashSet.Remove(R);
+                    Assert::AreEqual(StlRemoved, RhRemoved);
+                }
+                Assert::AreEqual(RHHashSet.GetSize(), static_cast<int32_t>(StlSet.size()));
+                if (i % 1000 == 0)
+                {
+                    Assert::IsTrue(HasEqualEntries(StlSet, RHHashSet));
+                }
+            }
+            Assert::IsTrue(HasEqualEntries(StlSet, RHHashSet));
+        }
 	};
 }
 
