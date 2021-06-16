@@ -8,11 +8,8 @@
 #include <assert.h>
 #include <new>
 
-#include <iostream> // Debug
-
 namespace NRobinHoodSet {
 
-    //const TableEntryImpl<T>
     // EntryT is TableEntryImpl<T>, with T being the type stored in this set
     template<typename EntryT>
     class IteratorImpl {
@@ -35,13 +32,14 @@ namespace NRobinHoodSet {
 
     ////////////////////////////////////////////////////////////////////////////////
 
-    // T is the type stored in this set
+    // T is the type stored in the RH set
     template <typename T>
     class TableEntryImpl
     {
-        // Stored as union to automatically handle storage/alignment
+        // Stored as union to automatically handle storage/alignment 
         union DataWrapper
         {
+            // This leaves _Value uninitialized on purpose (it is constructed with placement-new)
             DataWrapper() {}
             ~DataWrapper() {}
             T _Value;
@@ -76,6 +74,7 @@ namespace NRobinHoodSet {
     ////////////////////////////////////////////////////////////////////////////////
 
     // Robin hood set always growing in powers of 2. 
+    // T has to have a std::hash function, an equality comparison function, and a copy/move constructor.
     template<typename T>
     class RobinHoodSet {
     public:
@@ -88,7 +87,7 @@ namespace NRobinHoodSet {
         RobinHoodSet( const RobinHoodSet& ) = delete;
         RobinHoodSet& operator=( const RobinHoodSet& ) = delete;
 
-        // The KeyT type is tee same type as T, +/- a ref (required for perfect forwarding)
+        // The KeyT type is the same type as T, +/- a ref (required for perfect forwarding)
         template<typename KeyT>
         T& Set( KeyT&& Key );
 
@@ -106,7 +105,6 @@ namespace NRobinHoodSet {
         ConstIterator IteratorBegin() const { return ConstIterator(_pTable); }
         ConstIterator IteratorEnd() const { return ConstIterator( &_pTable[_TableTrueSize - 1] ); }
 
-
         // for-each compatibility
         Iterator begin() { return IteratorBegin(); }
         Iterator end() { return IteratorEnd(); }
@@ -121,11 +119,12 @@ namespace NRobinHoodSet {
         int32_t _NumElements;
         uint8_t _MaxProbeDist;
         int32_t _TableModSize;
-        // The true size of the table is its "hash-addressable" size + collision space + 1 (for end sentinel)
-        // It would of course be possible to make collisions at the end of the hash-addressable space wrap around, 
-        // and thus avoid allocating the extra collision space, but for this implementation the logic is kept simple
+        // The true size of the table is its "power of 2" size + extra (log(n)) collision space + 1 (the end sentinel).
+        // It would of course be possible to make collisions at the end of the "power of 2" space wrap around, 
+        // and thus avoid allocating the extra collision space, but for this implementation the logic is kept simple.
         int32_t _TableTrueSize = _TableModSize + _MaxProbeDist + 1;
-        // For code simplicity, even "empty" tables allocate some data. (This could perhaps be fixed by having a static allocation all empty sets points to)
+        // For code simplicity, even "empty" tables allocate some data. (This could probably be fixed by having a static 
+        // allocation that all empty sets points to)
         TableEntry* _pTable = new TableEntry[_TableTrueSize];
 
         std::hash<T> _KeyHasher;
@@ -201,34 +200,34 @@ namespace NRobinHoodSet {
     T& RobinHoodSet<T>::Set( KeyT&& Key )
     {
         uint32_t DesiredIdx = CalcDesiredIdx(Key);
-        TableEntry* Entry = _pTable + DesiredIdx;
+        TableEntry* pEntry = _pTable + DesiredIdx;
         int8_t Offset = 0;   
 
         // find
-        while ( !Entry->IsEmpty() && Offset <= Entry->GetIdxOffset() && Offset < _MaxProbeDist )
+        while ( !pEntry->IsEmpty() && Offset <= pEntry->GetIdxOffset() && Offset < _MaxProbeDist )
         {
-            if ( Entry->Data() == Key )
+            if ( pEntry->Data() == Key )
             {
                 // already exists
-                return Entry->Data();
+                return pEntry->Data();
             }
-            Entry++;
+            pEntry++;
             Offset++;
         }
 
-        if ( Entry->IsEmpty() )
+        if ( pEntry->IsEmpty() )
         {
-            Entry->CreateData( std::forward<KeyT>(Key), Offset );
+            pEntry->CreateData( std::forward<KeyT>(Key), Offset );
             _NumElements++;
         } else {
             if ( Offset >= _MaxProbeDist ) {
                 Grow();
                 return Set(std::forward<KeyT>(Key));
             } else {
-                assert( Offset > Entry->GetIdxOffset() );
+                assert( Offset > pEntry->GetIdxOffset() );
                 // Time for roobin hood: steal this spot
                 // find end of this sequence of entries, we need to shift them all down one step to make room
-                TableEntry* pSequenceEnd = Entry + 1;
+                TableEntry* pSequenceEnd = pEntry + 1;
                 while ( !pSequenceEnd->IsEmpty() ) {
                     if ( pSequenceEnd->IsEndSentinel() || pSequenceEnd->GetIdxOffset() >= _MaxProbeDist - 1 ) { // TODO: the -1 can probably be removed?
                         Grow();
@@ -238,7 +237,7 @@ namespace NRobinHoodSet {
                 }
                 assert( pSequenceEnd->IsEmpty() );
                 // now, shift every element to the right
-                while ( pSequenceEnd != Entry ) {
+                while ( pSequenceEnd != pEntry ) {
                     TableEntry* pPrevEntry = pSequenceEnd - 1;
                     uint8_t NewIdxOffset = pPrevEntry->GetIdxOffset() + 1;
                     if ( NewIdxOffset >= _MaxProbeDist )
@@ -251,11 +250,11 @@ namespace NRobinHoodSet {
                     pSequenceEnd = pPrevEntry;
                 }
                 // finally, insert our value
-                Entry->CreateData( std::forward<KeyT>(Key), Offset );
+                pEntry->CreateData( std::forward<KeyT>(Key), Offset );
                 _NumElements++;
             }
         }
-        return Entry->Data();
+        return pEntry->Data();
     }
 
     template<typename T>
@@ -295,16 +294,16 @@ namespace NRobinHoodSet {
     const T* RobinHoodSet<T>::Find(const T& Key) const
     {
         uint32_t DesiredIdx = CalcDesiredIdx(Key);
-        TableEntry* Entry = _pTable + DesiredIdx;
+        TableEntry* pEntry = _pTable + DesiredIdx;
         int8_t Offset = 0;
 
-        while (!Entry->IsEmpty() && Offset <= Entry->GetIdxOffset() && Offset < _MaxProbeDist)
+        while (!pEntry->IsEmpty() && Offset <= pEntry->GetIdxOffset() && Offset < _MaxProbeDist)
         {
-            if (Entry->Data() == Key)
+            if (pEntry->Data() == Key)
             {
-                return &Entry->Data();
+                return &pEntry->Data();
             }
-            Entry++;
+            pEntry++;
             Offset++;
         }
 
@@ -347,7 +346,9 @@ namespace NRobinHoodSet {
     template<typename T>
     uint32_t RobinHoodSet<T>::CalcDesiredIdx(const T& Key) const
     {
-        // TODO: Explain bitmask
+        // Since this RH table always grows in powers of two, (_TableModSize - 1) will be an efficient bitmask 
+        // to map random numbers to "buckets".
+        // This, of course, only works well if the hash spreads entropy somewhat evenly over the bits.
         return _KeyHasher(Key) & (_TableModSize - 1);
     }
 }
