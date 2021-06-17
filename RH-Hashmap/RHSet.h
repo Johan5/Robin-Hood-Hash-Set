@@ -169,7 +169,7 @@ namespace NRobinHoodSet {
     template <typename T>
     void TableEntryImpl<T>::CreateData(TableEntryImpl&& Other, uint8_t IdxOffset)
     {
-        _Data = std::move(Other._Data);
+        new (&_Data._Value) T(std::move(Other._Data._Value));
         _IdxOffset = IdxOffset;
     }
 
