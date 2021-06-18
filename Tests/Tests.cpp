@@ -95,8 +95,8 @@ namespace Tests
 	TEST_CLASS(RobinHoodSetTest)
 	{
 	public:
-		TEST_METHOD(AddRandom)
-		{
+        TEST_METHOD(AddRandom)
+        {
             uint32_t Seed = 0;
             RobinHoodSet<int32_t> RHHashSet;
             std::unordered_set<int32_t> StlSet;
@@ -117,7 +117,7 @@ namespace Tests
                 }
             }
             Assert::IsTrue(HasEqualEntries(StlSet, RHHashSet));
-		}
+        }
 
         TEST_METHOD(Remove)
         {
